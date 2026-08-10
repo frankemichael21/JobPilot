@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Search } from "lucide-react";
-import { jobs } from "@/data/jobs";
+import { ExternalLink, Info, Search } from "lucide-react";
 import { profil as initialProfil } from "@/data/profil";
 import { berechneMatch } from "@/lib/matching";
 import { ladeGespeichertesProfil } from "@/lib/profilStorage";
-import { ArbeitsModell, Profil } from "@/types";
+import { ArbeitsModell, Job, Profil } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { MatchBadge } from "@/components/ui/Badge";
 import { formatDatum, formatGehaltsspanne } from "@/lib/format";
@@ -24,7 +23,12 @@ const arbeitsmodellOptionen: ArbeitsmodellFilter[] = [
 
 const matchOptionen: MatchFilter[] = ["Alle", "Ab 60%", "Ab 80%"];
 
-export function JobsContent() {
+interface JobsContentProps {
+  jobs: Job[];
+  hinweis?: string;
+}
+
+export function JobsContent({ jobs, hinweis }: JobsContentProps) {
   const [suche, setSuche] = useState("");
   const [arbeitsmodell, setArbeitsmodell] = useState<ArbeitsmodellFilter>("Alle");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("Alle");
@@ -43,7 +47,7 @@ export function JobsContent() {
       werte.set(job.id, berechneMatch(job, profil));
     }
     return werte;
-  }, [profil]);
+  }, [jobs, profil]);
 
   const gefilterteJobs = useMemo(() => {
     const suchbegriff = suche.trim().toLowerCase();
@@ -72,7 +76,7 @@ export function JobsContent() {
         const matchB = berechneteMatches.get(b.id) ?? b.matchProzent;
         return matchB - matchA;
       });
-  }, [suche, arbeitsmodell, matchFilter, berechneteMatches]);
+  }, [jobs, suche, arbeitsmodell, matchFilter, berechneteMatches]);
 
   return (
     <div className="space-y-6">
@@ -83,6 +87,15 @@ export function JobsContent() {
           Wünschen.
         </p>
       </div>
+
+      {hinweis && (
+        <Card className="flex items-start gap-3 p-4">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-100 text-navy-700">
+            <Info size={16} aria-hidden="true" />
+          </span>
+          <p className="text-sm text-navy-900/70">{hinweis}</p>
+        </Card>
+      )}
 
       <Card className="p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
