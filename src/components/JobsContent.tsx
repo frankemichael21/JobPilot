@@ -5,6 +5,7 @@ import { ExternalLink, Info, Search } from "lucide-react";
 import { profil as initialProfil } from "@/data/profil";
 import { berechneMatch } from "@/lib/matching";
 import { ladeGespeichertesProfil } from "@/lib/profilStorage";
+import { sucheJobsServerseitig } from "@/lib/jobImport/sucheJobsServerseitig";
 import { ArbeitsModell, Job, Profil } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { MatchBadge } from "@/components/ui/Badge";
@@ -23,6 +24,9 @@ const arbeitsmodellOptionen: ArbeitsmodellFilter[] = [
 
 const matchOptionen: MatchFilter[] = ["Alle", "Ab 60%", "Ab 80%"];
 
+const SUCHE_DEBOUNCE_MS = 400;
+const SUCHE_MINDESTLAENGE = 2;
+
 interface JobsContentProps {
   jobs: Job[];
   hinweis?: string;
@@ -34,6 +38,15 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("Alle");
   const [profil, setProfil] = useState<Profil>(initialProfil);
 
+  // Aktuell angezeigte Jobs: entweder die ursprünglichen 25 (bzw. Beispiel-)
+  // Jobs aus dem initialen serverseitigen Aufruf, oder das Ergebnis einer
+  // aktiven Live-Suche. Die ursprüngliche `jobs`-Prop bleibt dabei
+  // unangetastet - bei leerer Suche wird einfach wieder zu ihr zurückgekehrt.
+  const [angezeigteJobs, setAngezeigteJobs] = useState<Job[]>(jobs);
+  const [aktuellerHinweis, setAktuellerHinweis] = useState<string | undefined>(hinweis);
+  const [istServerSuche, setIstServerSuche] = useState(false);
+  const [suchtGerade, setSuchtGerade] = useState(false);
+
   useEffect(() => {
     const gespeichert = ladeGespeichertesProfil();
     if (gespeichert) {
@@ -41,22 +54,66 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     }
   }, []);
 
+  // Debounced Live-Suche: bei leerem/zu kurzem Suchbegriff zurück zur
+  // ursprünglichen Job-Liste (kein Adzuna-Aufruf). Sonst nach einer kurzen
+  // Tipppause gezielt bei Adzuna suchen.
+  useEffect(() => {
+    const begriff = suche.trim();
+
+    if (begriff.length < SUCHE_MINDESTLAENGE) {
+      setAngezeigteJobs(jobs);
+      setAktuellerHinweis(hinweis);
+      setIstServerSuche(false);
+      setSuchtGerade(false);
+      return;
+    }
+
+    setSuchtGerade(true);
+    const timeoutId = setTimeout(() => {
+      let abgebrochen = false;
+
+      sucheJobsServerseitig(begriff).then((ergebnis) => {
+        // Race-Schutz: Ergebnis nur übernehmen, wenn sich der Suchbegriff
+        // zwischenzeitlich nicht schon wieder geändert hat.
+        if (abgebrochen || suche.trim() !== begriff) {
+          return;
+        }
+        setAngezeigteJobs(ergebnis.jobs);
+        setAktuellerHinweis(ergebnis.hinweis);
+        setIstServerSuche(true);
+        setSuchtGerade(false);
+      });
+
+      return () => {
+        abgebrochen = true;
+      };
+    }, SUCHE_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suche]);
+
   const berechneteMatches = useMemo(() => {
     const werte = new Map<string, number>();
-    for (const job of jobs) {
+    for (const job of angezeigteJobs) {
       werte.set(job.id, berechneMatch(job, profil));
     }
     return werte;
-  }, [jobs, profil]);
+  }, [angezeigteJobs, profil]);
 
   const gefilterteJobs = useMemo(() => {
     const suchbegriff = suche.trim().toLowerCase();
     const mindestMatch =
       matchFilter === "Ab 80%" ? 80 : matchFilter === "Ab 60%" ? 60 : 0;
 
-    return jobs
+    return angezeigteJobs
       .filter((job) => {
+        // Bei einer aktiven Server-Suche hat Adzuna bereits nach dem Begriff
+        // gefiltert (auch in Feldern wie der Beschreibung, die der
+        // clientseitige Text-Filter gar nicht durchsucht) - ein erneutes
+        // Herausfiltern hier würde sonst korrekte Treffer wieder verstecken.
         const passtSuche =
+          istServerSuche ||
           suchbegriff.length === 0 ||
           job.titel.toLowerCase().includes(suchbegriff) ||
           job.unternehmen.toLowerCase().includes(suchbegriff) ||
@@ -76,7 +133,7 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
         const matchB = berechneteMatches.get(b.id) ?? b.matchProzent;
         return matchB - matchA;
       });
-  }, [jobs, suche, arbeitsmodell, matchFilter, berechneteMatches]);
+  }, [angezeigteJobs, suche, arbeitsmodell, matchFilter, berechneteMatches, istServerSuche]);
 
   return (
     <div className="space-y-6">
@@ -88,12 +145,12 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
         </p>
       </div>
 
-      {hinweis && (
+      {aktuellerHinweis && (
         <Card className="flex items-start gap-3 p-4">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-100 text-navy-700">
             <Info size={16} aria-hidden="true" />
           </span>
-          <p className="text-sm text-navy-900/70">{hinweis}</p>
+          <p className="text-sm text-navy-900/70">{aktuellerHinweis}</p>
         </Card>
       )}
 
@@ -155,8 +212,9 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
       </Card>
 
       <p className="text-sm text-navy-900/60">
-        {gefilterteJobs.length}{" "}
-        {gefilterteJobs.length === 1 ? "Job gefunden" : "Jobs gefunden"}
+        {suchtGerade
+          ? "Suche läuft …"
+          : `${gefilterteJobs.length} ${gefilterteJobs.length === 1 ? "Job gefunden" : "Jobs gefunden"}`}
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
