@@ -17,14 +17,24 @@ import type { JobsFuerAnzeigeErgebnis } from "@/lib/jobImport/holeJobsFuerAnzeig
 // werden ausschließlich hier gelesen - "use server" stellt sicher, dass
 // diese Datei serverseitig bleibt, auch wenn JobsContent.tsx (Client
 // Component) die Funktion direkt aufruft.
+//
+// `standort` ist ein zusätzlicher, optionaler zweiter Parameter (nutzt den
+// bereits im Adzuna-Adapter vorhandenen "wo"-Parameter). Suchbegriff und
+// Standort sind unabhängig voneinander optional und beliebig kombinierbar -
+// nur wenn BEIDE leer sind, wird gar nicht gesucht.
 // ---------------------------------------------------------------------------
 
 const ADZUNA_QUELLE: Quelle = { id: "q-adzuna", name: "Adzuna", typ: "API", aktiv: true };
 const ANZAHL_PRO_SUCHE = 25;
 
-export async function sucheJobsServerseitig(suchbegriff: string): Promise<JobsFuerAnzeigeErgebnis> {
+export async function sucheJobsServerseitig(
+  suchbegriff: string,
+  standort?: string
+): Promise<JobsFuerAnzeigeErgebnis> {
   const begriff = suchbegriff.trim();
-  if (begriff.length === 0) {
+  const ort = (standort ?? "").trim();
+
+  if (begriff.length === 0 && ort.length === 0) {
     return { jobs: [] };
   }
 
@@ -38,15 +48,21 @@ export async function sucheJobsServerseitig(suchbegriff: string): Promise<JobsFu
     };
   }
 
+  const beschreibungDerSuche = beschreibeSuche(begriff, ort);
+
   try {
     const ergebnis = await holeAdzunaJobPool(
       ADZUNA_QUELLE,
       { appId, appKey },
-      { was: begriff, anzahl: ANZAHL_PRO_SUCHE }
+      {
+        was: begriff.length > 0 ? begriff : undefined,
+        wo: ort.length > 0 ? ort : undefined,
+        anzahl: ANZAHL_PRO_SUCHE,
+      }
     );
 
     if (ergebnis.jobs.length === 0) {
-      return { jobs: [], hinweis: `Keine Treffer für „${begriff}".` };
+      return { jobs: [], hinweis: `Keine Treffer für ${beschreibungDerSuche}.` };
     }
 
     return { jobs: ergebnis.jobs };
@@ -57,4 +73,14 @@ export async function sucheJobsServerseitig(suchbegriff: string): Promise<JobsFu
       hinweis: "Live-Suche aktuell nicht verfügbar. Bitte versuche es erneut.",
     };
   }
+}
+
+function beschreibeSuche(begriff: string, ort: string): string {
+  if (begriff.length > 0 && ort.length > 0) {
+    return `„${begriff}" in „${ort}"`;
+  }
+  if (begriff.length > 0) {
+    return `„${begriff}"`;
+  }
+  return `„${ort}"`;
 }

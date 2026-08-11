@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Info, Search } from "lucide-react";
+import { ExternalLink, Info, MapPin, Search } from "lucide-react";
 import { profil as initialProfil } from "@/data/profil";
 import { berechneMatch } from "@/lib/matching";
 import { ladeGespeichertesProfil } from "@/lib/profilStorage";
@@ -34,6 +34,7 @@ interface JobsContentProps {
 
 export function JobsContent({ jobs, hinweis }: JobsContentProps) {
   const [suche, setSuche] = useState("");
+  const [standort, setStandort] = useState("");
   const [arbeitsmodell, setArbeitsmodell] = useState<ArbeitsmodellFilter>("Alle");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("Alle");
   const [profil, setProfil] = useState<Profil>(initialProfil);
@@ -54,13 +55,18 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     }
   }, []);
 
-  // Debounced Live-Suche: bei leerem/zu kurzem Suchbegriff zurück zur
-  // ursprünglichen Job-Liste (kein Adzuna-Aufruf). Sonst nach einer kurzen
-  // Tipppause gezielt bei Adzuna suchen.
+  // Debounced Live-Suche: Suchbegriff und Standort sind unabhängig
+  // voneinander optional und beliebig kombinierbar (Suchbegriff allein,
+  // Standort allein, beides zusammen). Nur wenn BEIDE leer/zu kurz sind,
+  // wird zur ursprünglichen Job-Liste zurückgekehrt (kein Adzuna-Aufruf).
+  // Sonst wird nach einer kurzen Tipppause gezielt bei Adzuna gesucht.
   useEffect(() => {
     const begriff = suche.trim();
+    const ort = standort.trim();
+    const begriffAktiv = begriff.length >= SUCHE_MINDESTLAENGE;
+    const ortAktiv = ort.length >= SUCHE_MINDESTLAENGE;
 
-    if (begriff.length < SUCHE_MINDESTLAENGE) {
+    if (!begriffAktiv && !ortAktiv) {
       setAngezeigteJobs(jobs);
       setAktuellerHinweis(hinweis);
       setIstServerSuche(false);
@@ -72,17 +78,19 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     const timeoutId = setTimeout(() => {
       let abgebrochen = false;
 
-      sucheJobsServerseitig(begriff).then((ergebnis) => {
-        // Race-Schutz: Ergebnis nur übernehmen, wenn sich der Suchbegriff
-        // zwischenzeitlich nicht schon wieder geändert hat.
-        if (abgebrochen || suche.trim() !== begriff) {
-          return;
+      sucheJobsServerseitig(begriffAktiv ? begriff : "", ortAktiv ? ort : "").then(
+        (ergebnis) => {
+          // Race-Schutz: Ergebnis nur übernehmen, wenn sich Suchbegriff/
+          // Standort zwischenzeitlich nicht schon wieder geändert haben.
+          if (abgebrochen || suche.trim() !== begriff || standort.trim() !== ort) {
+            return;
+          }
+          setAngezeigteJobs(ergebnis.jobs);
+          setAktuellerHinweis(ergebnis.hinweis);
+          setIstServerSuche(true);
+          setSuchtGerade(false);
         }
-        setAngezeigteJobs(ergebnis.jobs);
-        setAktuellerHinweis(ergebnis.hinweis);
-        setIstServerSuche(true);
-        setSuchtGerade(false);
-      });
+      );
 
       return () => {
         abgebrochen = true;
@@ -91,7 +99,7 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
 
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suche]);
+  }, [suche, standort]);
 
   const berechneteMatches = useMemo(() => {
     const werte = new Map<string, number>();
@@ -108,8 +116,8 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
 
     return angezeigteJobs
       .filter((job) => {
-        // Bei einer aktiven Server-Suche hat Adzuna bereits nach dem Begriff
-        // gefiltert (auch in Feldern wie der Beschreibung, die der
+        // Bei einer aktiven Server-Suche hat Adzuna bereits nach Begriff/
+        // Standort gefiltert (auch in Feldern wie der Beschreibung, die der
         // clientseitige Text-Filter gar nicht durchsucht) - ein erneutes
         // Herausfiltern hier würde sonst korrekte Treffer wieder verstecken.
         const passtSuche =
@@ -156,19 +164,36 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
 
       <Card className="p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="relative w-full md:max-w-sm">
-            <Search
-              size={18}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-navy-900/40"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={suche}
-              onChange={(e) => setSuche(e.target.value)}
-              placeholder="Suche nach Titel, Unternehmen, Ort oder Tag …"
-              className="w-full rounded-lg border border-navy-100 bg-white py-2 pl-9 pr-3 text-sm text-navy-900 placeholder:text-navy-900/40 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            />
+          <div className="flex w-full flex-col gap-3 sm:flex-row md:max-w-2xl">
+            <div className="relative w-full sm:max-w-sm">
+              <Search
+                size={18}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-navy-900/40"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={suche}
+                onChange={(e) => setSuche(e.target.value)}
+                placeholder="Suche nach Titel, Unternehmen, Ort oder Tag …"
+                className="w-full rounded-lg border border-navy-100 bg-white py-2 pl-9 pr-3 text-sm text-navy-900 placeholder:text-navy-900/40 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              />
+            </div>
+
+            <div className="relative w-full sm:max-w-[220px]">
+              <MapPin
+                size={18}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-navy-900/40"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={standort}
+                onChange={(e) => setStandort(e.target.value)}
+                placeholder="Standort …"
+                className="w-full rounded-lg border border-navy-100 bg-white py-2 pl-9 pr-3 text-sm text-navy-900 placeholder:text-navy-900/40 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
