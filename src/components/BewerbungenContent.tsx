@@ -1,17 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Lock } from "lucide-react";
+import { FileEdit, Lock, X } from "lucide-react";
 import { bewerbungen as initialBewerbungen } from "@/data/bewerbungen";
-import { BEWERBUNGS_STATI, Bewerbung, BewerbungsStatus } from "@/types";
-import { Card } from "@/components/ui/Card";
+import { AnschreibenFelder, BEWERBUNGS_STATI, Bewerbung, BewerbungsStatus } from "@/types";
+import { Card, CardHeader } from "@/components/ui/Card";
 import { formatDatum } from "@/lib/format";
 import { statusStile } from "@/lib/status";
 import { cn } from "@/lib/utils";
-import { ladeGespeicherteBewerbungen, speichereBewerbungen } from "@/lib/bewerbungenStorage";
+import {
+  erzeugeLeeresAnschreiben,
+  ladeGespeicherteBewerbungen,
+  speichereBewerbungen,
+} from "@/lib/bewerbungenStorage";
+import { AnschreibenFormular } from "@/components/DokumenteContent";
 
 export function BewerbungenContent() {
   const [bewerbungen, setBewerbungen] = useState<Bewerbung[]>(initialBewerbungen);
+
+  // Anschreiben-Editor: `bearbeiteId` verweist auf die Bewerbung, deren
+  // Anschreiben gerade bearbeitet wird; `entwurf` ist der noch NICHT
+  // gespeicherte Arbeitsstand. Erst ein expliziter Klick auf "Speichern"
+  // schreibt den Entwurf in `bewerbungen`/localStorage - Tippen im Formular
+  // allein persistiert nichts.
+  const [bearbeiteId, setBearbeiteId] = useState<string | null>(null);
+  const [entwurf, setEntwurf] = useState<AnschreibenFelder | null>(null);
 
   // Gespeicherten Stand einmalig beim Mount laden. Ist noch nichts im
   // localStorage hinterlegt (allererster Aufruf), bleiben die Demo-Daten aus
@@ -41,6 +54,49 @@ export function BewerbungenContent() {
     });
   }
 
+  // Öffnet den Anschreiben-Editor für eine konkrete Bewerbung. Der Entwurf
+  // wird bewusst aus `bewerbungen` (nicht neu aus dem Storage) gelesen, da
+  // das der aktuell angezeigte, garantiert korrekte Stand ist.
+  function anschreibenBearbeiten(bewerbung: Bewerbung) {
+    setEntwurf(bewerbung.anschreiben ?? erzeugeLeeresAnschreiben(bewerbung));
+    setBearbeiteId(bewerbung.id);
+  }
+
+  function entwurfFeldAendern<K extends keyof AnschreibenFelder>(
+    feld: K,
+    wert: AnschreibenFelder[K]
+  ) {
+    setEntwurf((prev) => (prev ? { ...prev, [feld]: wert } : prev));
+  }
+
+  function anschreibenSpeichern() {
+    if (!bearbeiteId || !entwurf) {
+      return;
+    }
+    setBewerbungen((prev) => {
+      const aktualisiert = prev.map((b) =>
+        b.id === bearbeiteId
+          ? {
+              ...b,
+              anschreiben: entwurf,
+              aktualisiertAm: new Date().toISOString().slice(0, 10),
+            }
+          : b
+      );
+      speichereBewerbungen(aktualisiert);
+      return aktualisiert;
+    });
+    setBearbeiteId(null);
+    setEntwurf(null);
+  }
+
+  function anschreibenAbbrechen() {
+    setBearbeiteId(null);
+    setEntwurf(null);
+  }
+
+  const bearbeiteteBewerbung = bewerbungen.find((b) => b.id === bearbeiteId);
+
   return (
     <div className="space-y-6">
       <div>
@@ -61,6 +117,39 @@ export function BewerbungenContent() {
           bevor sie verschickt wird.
         </p>
       </Card>
+
+      {bearbeiteId && entwurf && bearbeiteteBewerbung && (
+        <Card>
+          <CardHeader
+            title={
+              bearbeiteteBewerbung.anschreiben
+                ? "Anschreiben bearbeiten"
+                : "Anschreiben erstellen"
+            }
+            description={`${bearbeiteteBewerbung.titel} · ${bearbeiteteBewerbung.unternehmen}`}
+          />
+
+          <AnschreibenFormular werte={entwurf} aufFeldAendern={entwurfFeldAendern} />
+
+          <div className="flex items-center justify-end gap-2 border-t border-navy-100 p-4">
+            <button
+              type="button"
+              onClick={anschreibenAbbrechen}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-navy-100 px-3 py-2 text-xs font-medium text-navy-900/70 hover:bg-navy-100/60"
+            >
+              <X size={14} aria-hidden="true" />
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              onClick={anschreibenSpeichern}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-navy-900 px-3 py-2 text-xs font-medium text-white hover:bg-navy-900/90"
+            >
+              Speichern
+            </button>
+          </div>
+        </Card>
+      )}
 
       <div className="scroll-thin -mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
         {BEWERBUNGS_STATI.map((status) => {
@@ -121,6 +210,15 @@ export function BewerbungenContent() {
                         ))}
                       </select>
                     </label>
+
+                    <button
+                      type="button"
+                      onClick={() => anschreibenBearbeiten(bewerbung)}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-900/70 hover:bg-navy-100/60"
+                    >
+                      <FileEdit size={13} aria-hidden="true" />
+                      {bewerbung.anschreiben ? "Anschreiben bearbeiten" : "Anschreiben erstellen"}
+                    </button>
                   </Card>
                 ))}
 

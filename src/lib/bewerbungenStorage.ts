@@ -1,4 +1,4 @@
-import { Bewerbung, Job } from "@/types";
+import { AnschreibenFelder, Bewerbung, Job } from "@/types";
 
 const BEWERBUNGEN_STORAGE_KEY = "jobpilot.bewerbungen";
 
@@ -81,5 +81,24 @@ export function erzeugeBewerbungAusJob(job: Job, matchProzent?: number): Bewerbu
     gehaltVon: job.gehaltVon,
     gehaltBis: job.gehaltBis,
     matchProzentBeiUebernahme: matchProzent,
+  };
+}
+
+/**
+ * Liefert einen leeren Anschreiben-Entwurf für eine Bewerbung, vorbelegt mit
+ * den einzigen Feldern, für die zuverlässige Daten aus der Bewerbung/dem
+ * Job-Snapshot vorliegen (Firma, Betreff aus dem Jobtitel). Alle anderen
+ * Felder bleiben bewusst leer statt mit erfundenen Angaben (Adresse,
+ * Ansprechpartner) oder einem generischen Demo-Text gefüllt zu werden.
+ */
+export function erzeugeLeeresAnschreiben(bewerbung: Bewerbung): AnschreibenFelder {
+  return {
+    empfaengerFirma: bewerbung.unternehmen,
+    firmenadresse: "",
+    ansprechpartner: "",
+    datum: new Date().toISOString().slice(0, 10),
+    betreff: `Bewerbung als ${bewerbung.titel}`,
+    anrede: "",
+    text: "",
   };
 }

@@ -79,6 +79,10 @@ export interface Bewerbung {
   gehaltVon?: number;
   gehaltBis?: number;
   matchProzentBeiUebernahme?: number;
+  // Eigenes Anschreiben dieser Bewerbung (Option A: direkt eingebettet statt
+  // separater anschreibenId/Store - siehe Analyse). Optional, damit bereits
+  // gespeicherte Bewerbungen ohne Anschreiben weiterhin gültig bleiben.
+  anschreiben?: AnschreibenFelder;
 }
 
 export interface Dokument {

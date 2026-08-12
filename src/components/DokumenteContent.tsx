@@ -58,6 +58,134 @@ function DokumentListe({
   );
 }
 
+// Reines Formular + Vorschau für AnschreibenFelder, unabhängig von der
+// Datenquelle (kontrollierte Komponente). Wird sowohl vom generischen,
+// eigenständigen Anschreiben-Editor auf dieser Seite verwendet als auch -
+// mit eigenem, bewerbungsspezifischem State - von BewerbungenContent.tsx,
+// um Formular und Vorschau nicht doppelt pflegen zu müssen.
+export function AnschreibenFormular({
+  werte,
+  aufFeldAendern,
+}: {
+  werte: AnschreibenFelder;
+  aufFeldAendern: <K extends keyof AnschreibenFelder>(feld: K, wert: AnschreibenFelder[K]) => void;
+}) {
+  return (
+    <div className="grid gap-6 p-5 lg:grid-cols-2">
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-navy-900">
+              Empfängerfirma
+            </span>
+            <input
+              type="text"
+              value={werte.empfaengerFirma}
+              onChange={(e) => aufFeldAendern("empfaengerFirma", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-navy-900">
+              Ansprechpartner
+            </span>
+            <input
+              type="text"
+              value={werte.ansprechpartner}
+              onChange={(e) => aufFeldAendern("ansprechpartner", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            />
+          </label>
+        </div>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-navy-900">
+            Firmenadresse
+          </span>
+          <textarea
+            value={werte.firmenadresse}
+            onChange={(e) => aufFeldAendern("firmenadresse", e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          />
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-navy-900">Datum</span>
+            <input
+              type="date"
+              value={werte.datum}
+              onChange={(e) => aufFeldAendern("datum", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            />
+          </label>
+
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-navy-900">Anrede</span>
+            <input
+              type="text"
+              value={werte.anrede}
+              onChange={(e) => aufFeldAendern("anrede", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            />
+          </label>
+        </div>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-navy-900">Betreff</span>
+          <input
+            type="text"
+            value={werte.betreff}
+            onChange={(e) => aufFeldAendern("betreff", e.target.value)}
+            className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          />
+        </label>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-navy-900">Haupttext</span>
+          <textarea
+            value={werte.text}
+            onChange={(e) => aufFeldAendern("text", e.target.value)}
+            rows={8}
+            className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          />
+        </label>
+      </div>
+
+      <div className="rounded-xl border border-navy-100 bg-navy-100/20 p-6">
+        <div className="mx-auto max-w-md rounded-lg bg-white p-6 shadow-sm text-sm text-navy-900">
+          <p className="whitespace-pre-line text-navy-900/80">
+            {werte.empfaengerFirma}
+            {werte.firmenadresse ? `\n${werte.firmenadresse}` : ""}
+          </p>
+          {werte.ansprechpartner && (
+            <p className="mt-1 text-navy-900/80">
+              z. Hd. {werte.ansprechpartner}
+            </p>
+          )}
+
+          <p className="mt-6 text-right text-navy-900/60">
+            {werte.datum ? formatDatum(werte.datum) : ""}
+          </p>
+
+          <p className="mt-6 font-semibold">{werte.betreff}</p>
+
+          <p className="mt-4">{werte.anrede}</p>
+
+          <p className="mt-4 whitespace-pre-line leading-relaxed">
+            {werte.text}
+          </p>
+
+          <p className="mt-6">Mit freundlichen Grüßen</p>
+          <p className="mt-1 font-medium">{profil.persoenlicheAngaben.vollerName}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DokumenteContent() {
   const [anschreiben, setAnschreiben] = useState<AnschreibenFelder>(anschreibenBeispiel);
 
@@ -96,118 +224,7 @@ export function DokumenteContent() {
           description="Alle Angaben lassen sich einzeln bearbeiten und werden direkt in der Vorschau übernommen"
         />
 
-        <div className="grid gap-6 p-5 lg:grid-cols-2">
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">
-                  Empfängerfirma
-                </span>
-                <input
-                  type="text"
-                  value={anschreiben.empfaengerFirma}
-                  onChange={(e) => feldAendern("empfaengerFirma", e.target.value)}
-                  className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">
-                  Ansprechpartner
-                </span>
-                <input
-                  type="text"
-                  value={anschreiben.ansprechpartner}
-                  onChange={(e) => feldAendern("ansprechpartner", e.target.value)}
-                  className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-                />
-              </label>
-            </div>
-
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-navy-900">
-                Firmenadresse
-              </span>
-              <textarea
-                value={anschreiben.firmenadresse}
-                onChange={(e) => feldAendern("firmenadresse", e.target.value)}
-                rows={2}
-                className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-              />
-            </label>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">Datum</span>
-                <input
-                  type="date"
-                  value={anschreiben.datum}
-                  onChange={(e) => feldAendern("datum", e.target.value)}
-                  className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">Anrede</span>
-                <input
-                  type="text"
-                  value={anschreiben.anrede}
-                  onChange={(e) => feldAendern("anrede", e.target.value)}
-                  className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-                />
-              </label>
-            </div>
-
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-navy-900">Betreff</span>
-              <input
-                type="text"
-                value={anschreiben.betreff}
-                onChange={(e) => feldAendern("betreff", e.target.value)}
-                className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-              />
-            </label>
-
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-navy-900">Haupttext</span>
-              <textarea
-                value={anschreiben.text}
-                onChange={(e) => feldAendern("text", e.target.value)}
-                rows={8}
-                className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-              />
-            </label>
-          </div>
-
-          <div className="rounded-xl border border-navy-100 bg-navy-100/20 p-6">
-            <div className="mx-auto max-w-md rounded-lg bg-white p-6 shadow-sm text-sm text-navy-900">
-              <p className="whitespace-pre-line text-navy-900/80">
-                {anschreiben.empfaengerFirma}
-                {anschreiben.firmenadresse ? `\n${anschreiben.firmenadresse}` : ""}
-              </p>
-              {anschreiben.ansprechpartner && (
-                <p className="mt-1 text-navy-900/80">
-                  z. Hd. {anschreiben.ansprechpartner}
-                </p>
-              )}
-
-              <p className="mt-6 text-right text-navy-900/60">
-                {anschreiben.datum ? formatDatum(anschreiben.datum) : ""}
-              </p>
-
-              <p className="mt-6 font-semibold">{anschreiben.betreff}</p>
-
-              <p className="mt-4">{anschreiben.anrede}</p>
-
-              <p className="mt-4 whitespace-pre-line leading-relaxed">
-                {anschreiben.text}
-              </p>
-
-              <p className="mt-6">Mit freundlichen Grüßen</p>
-              <p className="mt-1 font-medium">{profil.persoenlicheAngaben.vollerName}</p>
-            </div>
-          </div>
-        </div>
+        <AnschreibenFormular werte={anschreiben} aufFeldAendern={feldAendern} />
       </Card>
     </div>
   );
