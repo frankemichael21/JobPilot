@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Info, MapPin, Search } from "lucide-react";
+import { Briefcase, Check, ExternalLink, Info, MapPin, Search } from "lucide-react";
 import { profil as initialProfil } from "@/data/profil";
 import { berechneMatch } from "@/lib/matching";
 import { ladeGespeichertesProfil } from "@/lib/profilStorage";
+import {
+  bewerbungExistiertFuerJob,
+  erzeugeBewerbungAusJob,
+  ladeGespeicherteBewerbungen,
+  speichereBewerbungen,
+} from "@/lib/bewerbungenStorage";
 import { sucheJobsServerseitig } from "@/lib/jobImport/sucheJobsServerseitig";
 import { holeKategorienServerseitig } from "@/lib/jobImport/holeKategorienServerseitig";
 import type { AdzunaKategorie } from "@/lib/jobImport/adapters/adzuna";
@@ -42,6 +48,7 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
   const [arbeitsmodell, setArbeitsmodell] = useState<ArbeitsmodellFilter>("Alle");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("Alle");
   const [profil, setProfil] = useState<Profil>(initialProfil);
+  const [vorgemerkteJobIds, setVorgemerkteJobIds] = useState<Set<string>>(new Set());
 
   // Aktuell angezeigte Jobs: entweder die ursprünglichen 25 (bzw. Beispiel-)
   // Jobs aus dem initialen serverseitigen Aufruf, oder das Ergebnis einer
@@ -57,6 +64,14 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     if (gespeichert) {
       setProfil(gespeichert);
     }
+  }, []);
+
+  // Bereits als Bewerbung vorgemerkte Jobs einmalig beim Mount aus dem
+  // localStorage laden, damit der Button-Zustand auch nach einem Reload
+  // korrekt "Bereits vorgemerkt" anzeigt (siehe bewerbungenStorage.ts).
+  useEffect(() => {
+    const gespeichert = ladeGespeicherteBewerbungen() ?? [];
+    setVorgemerkteJobIds(new Set(gespeichert.map((b) => b.jobId)));
   }, []);
 
   // Kategorienliste einmalig beim Mount laden (kein Freitext, daher kein
@@ -175,6 +190,25 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
       });
   }, [angezeigteJobs, suche, arbeitsmodell, matchFilter, berechneteMatches, istServerSuche]);
 
+  // Übernimmt einen Job als neue Bewerbung mit Status "Interessant".
+  // Liest den aktuellen Stand bewusst frisch aus dem localStorage (nicht aus
+  // einem eigenen Bewerbungen-State), da JobsContent und BewerbungenContent
+  // unabhängige Routen ohne gemeinsamen React-State sind - localStorage ist
+  // der einzige Kommunikationskanal zwischen beiden.
+  function bewerbungVorbereiten(job: Job) {
+    const bestehende = ladeGespeicherteBewerbungen() ?? [];
+
+    if (bewerbungExistiertFuerJob(job.id, bestehende)) {
+      setVorgemerkteJobIds((prev) => new Set(prev).add(job.id));
+      return;
+    }
+
+    const matchProzent = berechneteMatches.get(job.id) ?? job.matchProzent;
+    const neueBewerbung = erzeugeBewerbungAusJob(job, matchProzent);
+    speichereBewerbungen([...bestehende, neueBewerbung]);
+    setVorgemerkteJobIds((prev) => new Set(prev).add(job.id));
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -290,65 +324,93 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {gefilterteJobs.map((job) => (
-          <Card key={job.id} className="flex flex-col p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold text-navy-900">
-                    {job.titel}
-                  </h2>
-                  {job.neu && (
-                    <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[11px] font-semibold text-accent-600">
-                      Neu
-                    </span>
-                  )}
+        {gefilterteJobs.map((job) => {
+          const istVorgemerkt = vorgemerkteJobIds.has(job.id);
+
+          return (
+            <Card key={job.id} className="flex flex-col p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="truncate text-base font-semibold text-navy-900">
+                      {job.titel}
+                    </h2>
+                    {job.neu && (
+                      <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[11px] font-semibold text-accent-600">
+                        Neu
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-sm text-navy-900/70">
+                    {job.unternehmen} · {job.standort}
+                  </p>
                 </div>
-                <p className="mt-0.5 truncate text-sm text-navy-900/70">
-                  {job.unternehmen} · {job.standort}
-                </p>
+                <MatchBadge prozent={berechneteMatches.get(job.id) ?? job.matchProzent} />
               </div>
-              <MatchBadge prozent={berechneteMatches.get(job.id) ?? job.matchProzent} />
-            </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-navy-900/60">
-              <span className="rounded-full bg-navy-100 px-2.5 py-1 text-navy-700">
-                {job.arbeitsmodell}
-              </span>
-              <span>{formatGehaltsspanne(job.gehaltVon, job.gehaltBis)}</span>
-            </div>
-
-            <p className="mt-3 line-clamp-3 text-sm text-navy-900/70">
-              {job.beschreibung}
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {job.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-navy-100 px-2 py-0.5 text-[11px] text-navy-900/70"
-                >
-                  {tag}
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-navy-900/60">
+                <span className="rounded-full bg-navy-100 px-2.5 py-1 text-navy-700">
+                  {job.arbeitsmodell}
                 </span>
-              ))}
-            </div>
+                <span>{formatGehaltsspanne(job.gehaltVon, job.gehaltBis)}</span>
+              </div>
 
-            <div className="mt-4 flex items-center justify-between border-t border-navy-100 pt-3 text-xs text-navy-900/50">
-              <span>
-                {job.quelle} · veröffentlicht am {formatDatum(job.veroeffentlichtAm)}
-              </span>
-              <a
-                href={job.quelleUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-accent-600 hover:text-accent-500"
+              <p className="mt-3 line-clamp-3 text-sm text-navy-900/70">
+                {job.beschreibung}
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {job.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-navy-100 px-2 py-0.5 text-[11px] text-navy-900/70"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-navy-100 pt-3 text-xs text-navy-900/50">
+                <span>
+                  {job.quelle} · veröffentlicht am {formatDatum(job.veroeffentlichtAm)}
+                </span>
+                <a
+                  href={job.quelleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-accent-600 hover:text-accent-500"
+                >
+                  Quelle öffnen
+                  <ExternalLink size={14} aria-hidden="true" />
+                </a>
+              </div>
+
+              <button
+                type="button"
+                disabled={istVorgemerkt}
+                onClick={() => bewerbungVorbereiten(job)}
+                className={cn(
+                  "mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                  istVorgemerkt
+                    ? "cursor-default bg-emerald-100 text-emerald-700"
+                    : "bg-navy-900 text-white hover:bg-navy-900/90"
+                )}
               >
-                Quelle öffnen
-                <ExternalLink size={14} aria-hidden="true" />
-              </a>
-            </div>
-          </Card>
-        ))}
+                {istVorgemerkt ? (
+                  <>
+                    <Check size={14} aria-hidden="true" />
+                    Als Bewerbung vorgemerkt
+                  </>
+                ) : (
+                  <>
+                    <Briefcase size={14} aria-hidden="true" />
+                    Bewerbung vorbereiten
+                  </>
+                )}
+              </button>
+            </Card>
+          );
+        })}
 
         {gefilterteJobs.length === 0 && (
           <Card className="col-span-full p-8 text-center text-sm text-navy-900/50">

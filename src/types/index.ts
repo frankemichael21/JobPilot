@@ -57,6 +57,11 @@ export interface Job {
   anforderungen?: JobAnforderungen;
 }
 
+// Snapshot-Felder (optional): werden beim Übernehmen eines Jobs als
+// "Bewerbung vorbereiten" einmalig aus dem Job kopiert, da Jobs selbst nicht
+// persistiert werden (weder Demo- noch Live-Suchergebnisse überleben einen
+// Reload). Ohne diesen Snapshot gingen Standort/Gehalt/Link nach einem
+// Reload verloren, obwohl die Bewerbung selbst weiterhin existiert.
 export interface Bewerbung {
   id: string;
   jobId: string;
@@ -68,6 +73,12 @@ export interface Bewerbung {
   beworbenAm?: string;
   naechsterSchritt?: string;
   notizen?: string;
+  quelleUrl?: string;
+  standort?: string;
+  arbeitsmodell?: ArbeitsModell;
+  gehaltVon?: number;
+  gehaltBis?: number;
+  matchProzentBeiUebernahme?: number;
 }
 
 export interface Dokument {

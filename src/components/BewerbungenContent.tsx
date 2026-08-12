@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { bewerbungen as initialBewerbungen } from "@/data/bewerbungen";
 import { BEWERBUNGS_STATI, Bewerbung, BewerbungsStatus } from "@/types";
@@ -8,13 +8,26 @@ import { Card } from "@/components/ui/Card";
 import { formatDatum } from "@/lib/format";
 import { statusStile } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { ladeGespeicherteBewerbungen, speichereBewerbungen } from "@/lib/bewerbungenStorage";
 
 export function BewerbungenContent() {
   const [bewerbungen, setBewerbungen] = useState<Bewerbung[]>(initialBewerbungen);
 
+  // Gespeicherten Stand einmalig beim Mount laden. Ist noch nichts im
+  // localStorage hinterlegt (allererster Aufruf), bleiben die Demo-Daten aus
+  // initialBewerbungen als Anzeige bestehen - erst eine tatsächliche
+  // Änderung (z. B. Statuswechsel oder eine neue, aus JobsContent übernommene
+  // Bewerbung) schreibt in den localStorage.
+  useEffect(() => {
+    const gespeichert = ladeGespeicherteBewerbungen();
+    if (gespeichert) {
+      setBewerbungen(gespeichert);
+    }
+  }, []);
+
   function statusAendern(id: string, neuerStatus: BewerbungsStatus) {
-    setBewerbungen((prev) =>
-      prev.map((b) =>
+    setBewerbungen((prev) => {
+      const aktualisiert = prev.map((b) =>
         b.id === id
           ? {
               ...b,
@@ -22,8 +35,10 @@ export function BewerbungenContent() {
               aktualisiertAm: new Date().toISOString().slice(0, 10),
             }
           : b
-      )
-    );
+      );
+      speichereBewerbungen(aktualisiert);
+      return aktualisiert;
+    });
   }
 
   return (
