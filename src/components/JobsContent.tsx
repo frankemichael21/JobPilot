@@ -6,6 +6,8 @@ import { profil as initialProfil } from "@/data/profil";
 import { berechneMatch } from "@/lib/matching";
 import { ladeGespeichertesProfil } from "@/lib/profilStorage";
 import { sucheJobsServerseitig } from "@/lib/jobImport/sucheJobsServerseitig";
+import { holeKategorienServerseitig } from "@/lib/jobImport/holeKategorienServerseitig";
+import type { AdzunaKategorie } from "@/lib/jobImport/adapters/adzuna";
 import { ArbeitsModell, Job, Profil } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { MatchBadge } from "@/components/ui/Badge";
@@ -35,6 +37,8 @@ interface JobsContentProps {
 export function JobsContent({ jobs, hinweis }: JobsContentProps) {
   const [suche, setSuche] = useState("");
   const [standort, setStandort] = useState("");
+  const [kategorie, setKategorie] = useState("");
+  const [kategorien, setKategorien] = useState<AdzunaKategorie[]>([]);
   const [arbeitsmodell, setArbeitsmodell] = useState<ArbeitsmodellFilter>("Alle");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("Alle");
   const [profil, setProfil] = useState<Profil>(initialProfil);
@@ -55,18 +59,39 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     }
   }, []);
 
-  // Debounced Live-Suche: Suchbegriff und Standort sind unabhängig
-  // voneinander optional und beliebig kombinierbar (Suchbegriff allein,
-  // Standort allein, beides zusammen). Nur wenn BEIDE leer/zu kurz sind,
-  // wird zur ursprünglichen Job-Liste zurückgekehrt (kein Adzuna-Aufruf).
-  // Sonst wird nach einer kurzen Tipppause gezielt bei Adzuna gesucht.
+  // Kategorienliste einmalig beim Mount laden (kein Freitext, daher kein
+  // Debounce nötig - die Liste ändert sich während einer Sitzung nicht).
+  // Fehler jeder Art führen serverseitig bereits zu einer leeren Liste
+  // (siehe holeKategorienServerseitig) - hier keine zusätzliche Fehlerbehandlung
+  // nötig, das Dropdown zeigt in diesem Fall lediglich nur "Alle Kategorien".
+  useEffect(() => {
+    let abgebrochen = false;
+
+    holeKategorienServerseitig().then((ergebnis) => {
+      if (!abgebrochen) {
+        setKategorien(ergebnis.kategorien);
+      }
+    });
+
+    return () => {
+      abgebrochen = true;
+    };
+  }, []);
+
+  // Debounced Live-Suche: Suchbegriff, Standort und Kategorie sind
+  // unabhängig voneinander optional und beliebig kombinierbar. Nur wenn
+  // ALLE DREI leer/zu kurz bzw. nicht ausgewählt sind, wird zur
+  // ursprünglichen Job-Liste zurückgekehrt (kein Adzuna-Aufruf). Sonst wird
+  // nach einer kurzen Tipppause gezielt bei Adzuna gesucht.
   useEffect(() => {
     const begriff = suche.trim();
     const ort = standort.trim();
+    const kategorieTag = kategorie.trim();
     const begriffAktiv = begriff.length >= SUCHE_MINDESTLAENGE;
     const ortAktiv = ort.length >= SUCHE_MINDESTLAENGE;
+    const kategorieAktiv = kategorieTag.length > 0;
 
-    if (!begriffAktiv && !ortAktiv) {
+    if (!begriffAktiv && !ortAktiv && !kategorieAktiv) {
       setAngezeigteJobs(jobs);
       setAktuellerHinweis(hinweis);
       setIstServerSuche(false);
@@ -78,19 +103,26 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
     const timeoutId = setTimeout(() => {
       let abgebrochen = false;
 
-      sucheJobsServerseitig(begriffAktiv ? begriff : "", ortAktiv ? ort : "").then(
-        (ergebnis) => {
-          // Race-Schutz: Ergebnis nur übernehmen, wenn sich Suchbegriff/
-          // Standort zwischenzeitlich nicht schon wieder geändert haben.
-          if (abgebrochen || suche.trim() !== begriff || standort.trim() !== ort) {
-            return;
-          }
-          setAngezeigteJobs(ergebnis.jobs);
-          setAktuellerHinweis(ergebnis.hinweis);
-          setIstServerSuche(true);
-          setSuchtGerade(false);
+      sucheJobsServerseitig(
+        begriffAktiv ? begriff : "",
+        ortAktiv ? ort : "",
+        kategorieAktiv ? kategorieTag : ""
+      ).then((ergebnis) => {
+        // Race-Schutz: Ergebnis nur übernehmen, wenn sich Suchbegriff/
+        // Standort/Kategorie zwischenzeitlich nicht schon wieder geändert haben.
+        if (
+          abgebrochen ||
+          suche.trim() !== begriff ||
+          standort.trim() !== ort ||
+          kategorie.trim() !== kategorieTag
+        ) {
+          return;
         }
-      );
+        setAngezeigteJobs(ergebnis.jobs);
+        setAktuellerHinweis(ergebnis.hinweis);
+        setIstServerSuche(true);
+        setSuchtGerade(false);
+      });
 
       return () => {
         abgebrochen = true;
@@ -99,7 +131,7 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
 
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suche, standort]);
+  }, [suche, standort, kategorie]);
 
   const berechneteMatches = useMemo(() => {
     const werte = new Map<string, number>();
@@ -193,6 +225,21 @@ export function JobsContent({ jobs, hinweis }: JobsContentProps) {
                 placeholder="Standort …"
                 className="w-full rounded-lg border border-navy-100 bg-white py-2 pl-9 pr-3 text-sm text-navy-900 placeholder:text-navy-900/40 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
               />
+            </div>
+
+            <div className="relative w-full sm:max-w-[220px]">
+              <select
+                value={kategorie}
+                onChange={(e) => setKategorie(e.target.value)}
+                className="w-full rounded-lg border border-navy-100 bg-white py-2 px-3 text-sm text-navy-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              >
+                <option value="">Alle Kategorien</option>
+                {kategorien.map((option) => (
+                  <option key={option.tag} value={option.tag}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

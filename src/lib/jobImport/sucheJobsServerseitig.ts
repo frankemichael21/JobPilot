@@ -18,10 +18,12 @@ import type { JobsFuerAnzeigeErgebnis } from "@/lib/jobImport/holeJobsFuerAnzeig
 // diese Datei serverseitig bleibt, auch wenn JobsContent.tsx (Client
 // Component) die Funktion direkt aufruft.
 //
-// `standort` ist ein zusätzlicher, optionaler zweiter Parameter (nutzt den
-// bereits im Adzuna-Adapter vorhandenen "wo"-Parameter). Suchbegriff und
-// Standort sind unabhängig voneinander optional und beliebig kombinierbar -
-// nur wenn BEIDE leer sind, wird gar nicht gesucht.
+// `standort` und `kategorie` sind zusätzliche, optionale Parameter (nutzen
+// die bereits im Adzuna-Adapter vorhandenen "wo"- bzw. "category"-Parameter;
+// `kategorie` erwartet einen "tag"-Wert wie von holeKategorienServerseitig()
+// geliefert, z. B. "it-jobs"). Suchbegriff, Standort und Kategorie sind
+// unabhängig voneinander optional und beliebig kombinierbar - nur wenn ALLE
+// DREI leer sind, wird gar nicht gesucht.
 // ---------------------------------------------------------------------------
 
 const ADZUNA_QUELLE: Quelle = { id: "q-adzuna", name: "Adzuna", typ: "API", aktiv: true };
@@ -29,12 +31,14 @@ const ANZAHL_PRO_SUCHE = 25;
 
 export async function sucheJobsServerseitig(
   suchbegriff: string,
-  standort?: string
+  standort?: string,
+  kategorie?: string
 ): Promise<JobsFuerAnzeigeErgebnis> {
   const begriff = suchbegriff.trim();
   const ort = (standort ?? "").trim();
+  const kategorieTag = (kategorie ?? "").trim();
 
-  if (begriff.length === 0 && ort.length === 0) {
+  if (begriff.length === 0 && ort.length === 0 && kategorieTag.length === 0) {
     return { jobs: [] };
   }
 
@@ -48,7 +52,7 @@ export async function sucheJobsServerseitig(
     };
   }
 
-  const beschreibungDerSuche = beschreibeSuche(begriff, ort);
+  const beschreibungDerSuche = beschreibeSuche(begriff, ort, kategorieTag);
 
   try {
     const ergebnis = await holeAdzunaJobPool(
@@ -57,6 +61,7 @@ export async function sucheJobsServerseitig(
       {
         was: begriff.length > 0 ? begriff : undefined,
         wo: ort.length > 0 ? ort : undefined,
+        kategorie: kategorieTag.length > 0 ? kategorieTag : undefined,
         anzahl: ANZAHL_PRO_SUCHE,
       }
     );
@@ -75,12 +80,21 @@ export async function sucheJobsServerseitig(
   }
 }
 
-function beschreibeSuche(begriff: string, ort: string): string {
-  if (begriff.length > 0 && ort.length > 0) {
-    return `„${begriff}" in „${ort}"`;
-  }
+function beschreibeSuche(begriff: string, ort: string, kategorieTag: string): string {
+  const teile: string[] = [];
   if (begriff.length > 0) {
-    return `„${begriff}"`;
+    teile.push(`„${begriff}"`);
   }
-  return `„${ort}"`;
+  if (kategorieTag.length > 0) {
+    teile.push(`Kategorie „${kategorieTag}"`);
+  }
+  const basis = teile.length > 0 ? teile.join(", ") : "";
+
+  if (ort.length > 0 && basis.length > 0) {
+    return `${basis} in „${ort}"`;
+  }
+  if (ort.length > 0) {
+    return `„${ort}"`;
+  }
+  return basis;
 }

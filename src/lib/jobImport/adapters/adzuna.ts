@@ -18,19 +18,40 @@ const ADZUNA_BASIS_URL = "https://api.adzuna.com/v1/api/jobs";
 const ADZUNA_MAX_ERGEBNISSE_PRO_SEITE = 50; // von Adzuna vorgegebenes Maximum
 const STANDARD_ERGEBNISSE_PRO_SEITE = 20;
 const ABBRUCH_TIMEOUT_MS = 10000;
+// Kategorien ändern sich sehr selten - 24h-Cache reicht aus und vermeidet
+// unnötige zusätzliche Adzuna-Aufrufe bei jedem Seitenaufruf/Mount.
+const KATEGORIEN_REVALIDATE_SEKUNDEN = 86400;
 
 export interface AdzunaZugangsdaten {
   appId: string;
   appKey: string;
 }
 
-// Bewusst neutrale, deutsche Parameternamen nach außen ("was"/"wo"), damit
-// der Rest der Anwendung nicht an Adzuna-spezifische Begriffe gebunden ist.
+// Bewusst neutrale, deutsche Parameternamen nach außen ("was"/"wo"/"kategorie"),
+// damit der Rest der Anwendung nicht an Adzuna-spezifische Begriffe gebunden ist.
 export interface AdzunaSuchparameter {
   was?: string;
   wo?: string;
+  // Erwartet einen "tag"-Wert wie von holeAdzunaKategorien() geliefert
+  // (z. B. "it-jobs"), wird 1:1 als Adzuna-Parameter "category" übergeben.
+  kategorie?: string;
   seite?: number;
   anzahl?: number;
+}
+
+// Entspricht einem Eintrag aus der Adzuna-/categories-Antwort.
+export interface AdzunaKategorie {
+  tag: string;
+  label: string;
+}
+
+interface AdzunaKategorieApiEintrag {
+  tag?: string;
+  label?: string;
+}
+
+interface AdzunaKategorienApiResponse {
+  results?: AdzunaKategorieApiEintrag[];
 }
 
 // Nur die Felder, die wir tatsächlich verwenden – bewusst nicht die
@@ -150,6 +171,9 @@ export function erzeugeAdzunaAdapter(
       if (suchparameter.wo) {
         url.searchParams.set("where", suchparameter.wo);
       }
+      if (suchparameter.kategorie) {
+        url.searchParams.set("category", suchparameter.kategorie);
+      }
 
       const abbruch = new AbortController();
       const timeoutId = setTimeout(() => abbruch.abort(), ABBRUCH_TIMEOUT_MS);
@@ -201,4 +225,82 @@ export function erzeugeAdzunaAdapter(
       return rohJobs;
     },
   };
+}
+
+/**
+ * Lädt die von Adzuna für Deutschland definierte Kategorienliste
+ * (.../jobs/de/categories). Liefert bei jedem Fehler (fehlende
+ * Zugangsdaten, Netzwerkfehler, HTTP-Fehler, unerwartete Antwortstruktur)
+ * bewusst ein leeres Array statt zu werfen - ein fehlgeschlagener
+ * Kategorien-Abruf darf die Jobs-Seite niemals zum Absturz bringen, das
+ * Kategorie-Dropdown zeigt in diesem Fall lediglich keine Optionen an.
+ *
+ * Cache: 24h (siehe KATEGORIEN_REVALIDATE_SEKUNDEN) - Kategorien ändern
+ * sich praktisch nie, ein häufigerer Abruf wäre unnötiger Verbrauch des
+ * Adzuna-Free-Tier-Kontingents. Betrifft ausschließlich diesen Abruf, nicht
+ * den eigentlichen Job-Suche-Request oben (der bleibt uncached/live).
+ */
+export async function holeAdzunaKategorien(
+  zugangsdaten: AdzunaZugangsdaten
+): Promise<AdzunaKategorie[]> {
+  if (!zugangsdaten.appId || !zugangsdaten.appKey) {
+    console.error("[Adzuna-Adapter] Fehlende API-Zugangsdaten – Kategorien-Abruf übersprungen.");
+    return [];
+  }
+
+  const url = new URL(`${ADZUNA_BASIS_URL}/${ADZUNA_LAND}/categories`);
+  url.searchParams.set("app_id", zugangsdaten.appId);
+  url.searchParams.set("app_key", zugangsdaten.appKey);
+  url.searchParams.set("content-type", "application/json");
+
+  const abbruch = new AbortController();
+  const timeoutId = setTimeout(() => abbruch.abort(), ABBRUCH_TIMEOUT_MS);
+
+  let antwort: Response;
+  try {
+    antwort = await fetch(url.toString(), {
+      signal: abbruch.signal,
+      next: { revalidate: KATEGORIEN_REVALIDATE_SEKUNDEN },
+    });
+  } catch (fehler) {
+    console.error("[Adzuna-Adapter] Netzwerkfehler oder Timeout beim Kategorien-Abruf:", fehler);
+    return [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!antwort.ok) {
+    console.error(`[Adzuna-Adapter] HTTP-Fehler ${antwort.status} ${antwort.statusText} (Kategorien)`);
+    return [];
+  }
+
+  let daten: unknown;
+  try {
+    daten = await antwort.json();
+  } catch (fehler) {
+    console.error("[Adzuna-Adapter] Kategorien-Antwort ist kein gültiges JSON:", fehler);
+    return [];
+  }
+
+  if (
+    typeof daten !== "object" ||
+    daten === null ||
+    !Array.isArray((daten as AdzunaKategorienApiResponse).results)
+  ) {
+    console.error("[Adzuna-Adapter] Unerwartete Antwortstruktur (kein results-Array, Kategorien).");
+    return [];
+  }
+
+  const ergebnisse = (daten as AdzunaKategorienApiResponse).results ?? [];
+  const kategorien: AdzunaKategorie[] = [];
+
+  for (const eintrag of ergebnisse) {
+    if (eintrag.tag && eintrag.label) {
+      kategorien.push({ tag: eintrag.tag, label: eintrag.label });
+    }
+    // Einträge ohne tag oder label werden übersprungen - ohne tag ist eine
+    // Kategorie nicht suchbar, ohne label nicht sinnvoll anzeigbar.
+  }
+
+  return kategorien;
 }
