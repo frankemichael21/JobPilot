@@ -1,27 +1,61 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Briefcase, CheckSquare, ClipboardList, ArrowRight } from "lucide-react";
+import {
+  Briefcase,
+  CalendarDays,
+  CalendarRange,
+  CheckSquare,
+  ClipboardList,
+  ArrowRight,
+  FileText,
+  FileX,
+} from "lucide-react";
 import { jobs } from "@/data/jobs";
-import { bewerbungen } from "@/data/bewerbungen";
+import { bewerbungen as initialBewerbungen } from "@/data/bewerbungen";
 import { naechsteAufgaben } from "@/data/aufgaben";
-import { BEWERBUNGS_STATI } from "@/types";
+import { Bewerbung } from "@/types";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { MatchBadge } from "@/components/ui/Badge";
 import { formatDatum } from "@/lib/format";
 import { statusStile } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { ladeGespeicherteBewerbungen } from "@/lib/bewerbungenStorage";
+import {
+  berechneStatusZaehlung,
+  zaehleAnschreibenFehlt,
+  zaehleAnschreibenVorhanden,
+  zaehleBewerbungenDiesenMonat,
+  zaehleBewerbungenDieseWoche,
+} from "@/lib/bewerbungenStatistik";
 
 export function DashboardContent() {
+  // Wie in BewerbungenContent.tsx: Demo-Daten als initialer Anzeigestand,
+  // gespeicherter Stand (falls vorhanden) ersetzt ihn nach dem Mount
+  // vollständig. Kein eigener Schreibzugriff - das Dashboard liest
+  // ausschließlich über bewerbungenStorage.ts, keine zweite Kopie/Persistenz.
+  const [bewerbungen, setBewerbungen] = useState<Bewerbung[]>(initialBewerbungen);
+
+  useEffect(() => {
+    const gespeichert = ladeGespeicherteBewerbungen();
+    if (gespeichert) {
+      setBewerbungen(gespeichert);
+    }
+  }, []);
+
   const neueJobs = jobs.filter((job) => job.neu);
   const offeneBewerbungen = bewerbungen.filter((b) => b.status !== "Absage");
   const offeneAufgaben = naechsteAufgaben
     .filter((a) => !a.erledigt)
     .sort((a, b) => a.faelligAm.localeCompare(b.faelligAm));
 
-  const statusZaehlung = BEWERBUNGS_STATI.map((status) => ({
-    status,
-    anzahl: bewerbungen.filter((b) => b.status === status).length,
-  }));
+  const statusZaehlung = berechneStatusZaehlung(bewerbungen);
+  const anschreibenVorhanden = zaehleAnschreibenVorhanden(bewerbungen);
+  const anschreibenFehlt = zaehleAnschreibenFehlt(bewerbungen);
+  const bewerbungenDieseWoche = zaehleBewerbungenDieseWoche(bewerbungen);
+  const bewerbungenDiesenMonat = zaehleBewerbungenDiesenMonat(bewerbungen);
 
   return (
     <div className="space-y-6">
@@ -51,6 +85,36 @@ export function DashboardContent() {
           value={offeneAufgaben.length}
           hinweis="Noch nicht erledigt"
           icon={CheckSquare}
+        />
+        <StatCard
+          label="Bewerbungen insgesamt"
+          value={bewerbungen.length}
+          hinweis="Alle gespeicherten Bewerbungen"
+          icon={ClipboardList}
+        />
+        <StatCard
+          label="Anschreiben vorhanden"
+          value={anschreibenVorhanden}
+          hinweis="Bewerbungen mit erstelltem Anschreiben"
+          icon={FileText}
+        />
+        <StatCard
+          label="Anschreiben fehlt"
+          value={anschreibenFehlt}
+          hinweis="Noch kein Anschreiben erstellt"
+          icon={FileX}
+        />
+        <StatCard
+          label="Bewerbungen diese Woche"
+          value={bewerbungenDieseWoche}
+          hinweis="Erstellt in der aktuellen Kalenderwoche"
+          icon={CalendarDays}
+        />
+        <StatCard
+          label="Bewerbungen diesen Monat"
+          value={bewerbungenDiesenMonat}
+          hinweis="Erstellt im aktuellen Kalendermonat"
+          icon={CalendarRange}
         />
       </div>
 
